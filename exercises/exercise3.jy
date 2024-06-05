@@ -1,0 +1,100 @@
+pipeline GoodsTransportPipeline {
+
+    DataExtractor
+        -> FileInterpreter
+        -> CSVParser
+        -> MetadataCleaner
+        -> ColumnSelector
+        -> DataTransformer
+        -> DataValidator
+        -> SQLiteStorer;
+
+    block DataExtractor oftype HttpExtractor {
+        url: "https://www-genesis.destatis.de/genesis/downloads/00/tables/46131-0014_00.csv";
+    }
+
+    block FileInterpreter oftype TextFileInterpreter {
+        encoding: "latin1";
+    }
+
+    block CSVParser oftype CSVInterpreter {
+        delimiter: ';';
+    }
+
+    block MetadataCleaner oftype RowDeleter {
+        delete: [row 1, row 2, row 3, row 4, row 5, row 6, row 7, row 8, row 41337, row 41338, row 41339];
+    }
+
+    block ColumnSelector oftype ColumnSelector {
+        columns: [
+            "A" -> "year",
+            "B" -> "month",
+            "C" -> "goods_id",
+            "D" -> "goods_name",
+            "E" -> "goods_source",
+            "AT" -> "abroad",
+            "AU" -> "total"
+        ];
+    }
+
+    valuetype positive_integer oftype integer {
+        constraints : [
+            GreaterThanZero
+        ]; 
+    }
+
+    constraint GreaterThanZero on decimal :
+        value > 0;
+
+    constraint GoodsIDRegex oftype RegexConstraint {
+        regex: /^NST7-[A-Z0-9]{3}$/;
+    }
+
+    valuetype GoodsIDType oftype text {
+        constraints: [
+            GoodsIDRegex,
+        ];
+    }
+
+    constraint GermanMonthConst oftype AllowlistConstraint {
+        allowlist: ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+    }
+
+    valuetype GermanMonth oftype text {
+        constraints: [
+            GermanMonthConst,
+        ];
+    }
+
+    block DataTransformer oftype TableInterpreter {
+        header: false;
+        columns: [
+            'year' oftype positive_integer,
+            'month' oftype GermanMonth,
+            'goods_id' oftype GoodsIDType,
+            'goods_name' oftype text,
+            'goods_source' oftype text,
+            'abroad' oftype positive_integer,
+            'total' oftype positive_integer
+        ];
+    }
+
+    constraint ValidPositiveInt on integer :
+        value > 0;
+
+    block DataValidator oftype Validator {
+        rules: [
+            "year" -> ValidPositiveInt,
+            "month" -> GermanMonthConst,
+            "goods_id" -> GoodsIDRegex,
+            "abroad" -> ValidPositiveInt,
+            "total" -> ValidPositiveInt
+        ];
+    }
+
+    block SQLiteStorer oftype SQLiteLoader {
+        table: 'goods';
+        file: './goodsTransportedByTrain.sqlite';
+    }
+}
+
