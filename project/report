@@ -1,0 +1,53 @@
+# notebooks/data_report.ipynb
+
+# Data Report
+
+## Introduction
+This project aims to analyze how the adoption of renewable energy sources has impacted CO2 emissions in European countries over the past decade. By investigating historical data on renewable energy usage and CO2 emissions, we can assess the effectiveness of renewable energy in reducing carbon emissions.
+
+## Data Sources
+
+### Renewable Energy Adoption
+- **Why chosen**: It provides comprehensive data on renewable energy production by country.
+- **Origin**: [Kaggle Dataset](https://www.kaggle.com/datasets/arnabchaki/renewable-energy-production-by-country)
+- **Content**: Annual renewable energy production by country from 2010 onwards.
+
+### CO2 Emissions
+- **Why chosen**: It provides detailed data on CO2 emissions by country.
+- **Origin**: [European Data Portal](https://data.europa.eu/euodp/en/data/dataset/10.2905/089CD5E2-128F-4A12-BDF1-A9BDF92F9BE8)
+- **Content**: Annual CO2 emissions by country from 2010 onwards.
+
+## Data Pipeline
+
+### Overview
+Our data pipeline utilizes Python, Pandas, and SQLite.
+
+### Data Transformation and Cleaning
+1. Filtering data for the past decade (2010 onwards).
+2. Normalizing data formats and merging datasets.
+3. Handling missing values and anomalies.
+
+### Challenges and Solutions
+We encountered the following issues:
+1. Data inconsistencies: Resolved by normalizing data formats.
+2. Merging datasets: Solved by using common keys and careful alignment.
+
+### Error Handling
+The pipeline handles errors by logging errors and handling missing or inconsistent data gracefully.
+
+## Results and Limitations
+
+### Output Data
+The final output data is structured as follows: [Description of output structure].  
+The quality of the output data is [Description of quality].
+
+### Data Format
+We chose CSV for the output because it is easy to analyze and visualize.
+
+### Critical Reflection
+Potential issues and limitations include:
+1. Incomplete data for some countries
+2. Potential biases in reported measures
+
+## Conclusion
+Summarize the findings and impact of your data pipeline.
