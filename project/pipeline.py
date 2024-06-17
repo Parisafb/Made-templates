@@ -1,72 +1,85 @@
-# scripts/pipeline.py
+# Follow your project plan to build an automated data pipeline for your project
+#     Write a script (for example in Python or Jayvee) that pulls the data sets you chose from the internet, transforms it and fixes errors, and finally stores your data in the /data directory
+#         Place the script in the /project directory (any file name is fine)
+#         Add a /project/pipeline.sh that starts your pipeline as you would do from the command line as entry point:
+#             E.g. if you run your script on your command line using `python3 /project/pipeline.py`, create a /project/pipeline.sh with the content:
+#                     #!/bin/bash
+#                     python3 /project/pipeline.py
+#     The output of the script should be: datasets in your /data directory (e.g., as SQLite databases)
+#         Do NOT check in your data sets, just your script
+#         You can use .gitignore to avoid checking in files on git
+#         This data set will be the base for your data report in future project work
+# Update the issues and project plan if necessary
 
-import os
-import shutil
-import subprocess
-import zipfile
+
 import pandas as pd
-import sqlite3
+import os
+from kaggle.api.kaggle_api_extended import KaggleApi
+from zipfile import ZipFile
+from sqlalchemy import create_engine
 
-# Set Kaggle environment variables
-os.environ['KAGGLE_CONFIG_DIR'] = os.path.expanduser('~/.kaggle')
-os.environ['KAGGLE_DATASETS_CACHE'] = os.path.expanduser('~/.kaggle/cache')
+class KaggleETLPipeline:
+    def __init__(self, kaggle_dataset1, kaggle_dataset2, db_name):
+        self.kaggle_dataset1 = kaggle_dataset1
+        self.kaggle_dataset2 = kaggle_dataset2
+        self.db_name = db_name
+        self.engine = create_engine(f'sqlite:///{db_name}.sqlite', echo=False)
+        self.api = KaggleApi()
+        self.api.authenticate()
+        self.files_to_delete = []
 
-# Ensure the cache directory exists
-os.makedirs(os.environ['KAGGLE_DATASETS_CACHE'], exist_ok=True)
+    def extract_data(self):
+        # Download and extract the first Kaggle dataset
+        self.api.dataset_download_files(self.kaggle_dataset1, path='.', unzip=True)
+        dataset1_files = [file for file in os.listdir('.') if file.endswith('.csv')]
+        df1 = pd.read_csv(dataset1_files[0])
 
-# Kaggle datasets to download
-datasets = [
-    ('arnabchaki/renewable-energy-production-by-country', 'renewable-energy.zip', 'renewable-energy'),
-    ('edgar/ghg-emissions', 'co2-emissions.zip', 'co2-emissions')  # Replace with actual identifier if needed
-]
+        # Download and extract the second Kaggle dataset
+        self.api.dataset_download_files(self.kaggle_dataset2, path='.', unzip=True)
+        dataset2_files = [file for file in os.listdir('.') if file.endswith('.csv')]
+        df2 = pd.read_csv(dataset2_files[0])
 
-# Download and extract datasets
-for dataset, zip_file, folder in datasets:
-    subprocess.run(f'kaggle datasets download -d {dataset}', shell=True, check=True)
-    with zipfile.ZipFile(zip_file, 'r') as zip_ref:
-        zip_ref.extractall(folder)
-    os.remove(zip_file)
+        # Mark files for deletion later
+        self.files_to_delete.extend(dataset1_files + dataset2_files)
 
-# Function to read CSV with various encodings
-def read_csv_with_encodings(file_path, encodings=['latin1', 'ISO-8859-1', 'cp1252']):
-    for enc in encodings:
-        try:
-            return pd.read_csv(file_path, encoding=enc)
-        except Exception as e:
-            print(f"Failed to read {file_path} with encoding {enc}: {e}")
-    return None
+        print("Data extraction complete.")
+        return df1, df2
 
-# Load and preprocess renewable energy data
-renewable_df = read_csv_with_encodings('renewable-energy/renewable_energy_production.csv')
-if renewable_df is None:
-    print("Failed to read renewable energy dataset with all attempted encodings.")
-    exit(1)
+    def transform_data(self, df1, df2):
+        # Example transformations:
+        # Remove unnecessary columns
+        df1 = df1.drop(columns=['Unnamed: 0'], errors='ignore')
+        df2 = df2.drop(columns=['Unnamed: 0'], errors='ignore')
 
-# Preprocess renewable energy data
-renewable_df = renewable_df[['Country', 'Year', 'Renewable_Energy_Production']]
-renewable_df = renewable_df[renewable_df['Year'] >= 2010]  # Filter data for the past decade
+        # Fill missing values with backward fill
+        df1 = df1.bfill()
+        df2 = df2.bfill()
 
-# Load and preprocess CO2 emissions data
-co2_df = read_csv_with_encodings('co2-emissions/CO2_Emissions.csv')  # Adjust path as needed
-if co2_df is None:
-    print("Failed to read CO2 emissions dataset with all attempted encodings.")
-    exit(1)
+        print("Data transformation complete.")
+        return df1, df2
 
-# Preprocess CO2 emissions data
-co2_df = co2_df[['Country', 'Year', 'CO2_Emissions']]
-co2_df = co2_df[co2_df['Year'] >= 2010]  # Filter data for the past decade
+    def load_data(self, df1, df2):
+        df1.to_sql("dataset1", self.engine, if_exists='replace', index=False)
+        df2.to_sql("dataset2", self.engine, if_exists='replace', index=False)
+        print(f"Data loaded into database '{self.db_name}.sqlite'.")
 
-# Merge datasets
-merged_df = pd.merge(renewable_df, co2_df, on=['Country', 'Year'])
+        # Clean up extracted files
+        for file in self.files_to_delete:
+            os.remove(file)
 
-# Save merged data to SQLite database
-os.makedirs('data', exist_ok=True)
-conn = sqlite3.connect('data/merged_data.sqlite')
-merged_df.to_sql('merged_data', conn, if_exists='replace', index=False)
-conn.close()
+        self.engine.dispose()
+        print("Temporary files deleted and database connection closed.")
 
-# Clean up cache and extracted folders
-shutil.rmtree('renewable-energy')
-shutil.rmtree('co2-emissions')
-for file in os.listdir(os.environ['KAGGLE_DATASETS_CACHE']):
-    os.remove(os.path.join(os.environ['KAGGLE_DATASETS_CACHE'], file))
+    def run_pipeline(self):
+        df1, df2 = self.extract_data()
+        transformed_df1, transformed_df2 = self.transform_data(df1, df2)
+        self.load_data(transformed_df1, transformed_df2)
+        print("ETL pipeline completed successfully.")
+
+if __name__ == '__main__':
+    pipeline = KaggleETLPipeline(
+        kaggle_dataset1='thedevastator/impact-of-co2-on-quality-of-life-around-the-world',
+        kaggle_dataset2='ulrikthygepedersen/co2-emissions-by-country',
+        db_name='kaggle_data'
+    )
+    pipeline.run_pipeline()
