@@ -1,0 +1,58 @@
+//Exercise-1:
+//	Build an automated data pipeline for the following source:
+//		https://opendata.rhein-kreis-neuss.de/api/v2/catalog/datasets/rhein-kreis-neuss-flughafen-weltweit/exports/csv
+//
+//Goal:
+//	Write data into a SQLite database called “airports.sqlite”, in the table “airports”
+//	Assign fitting built-in SQLite types (e.g., BIGINT, TEXT or FLOAT) to all columns
+//	Do not rename column names!
+//	No further data validation is required, do not drop any rows or change any data points
+//
+
+
+
+pipeline AirportsPipeline {
+ AirportsExtractor
+         -> AirportsTextFileInterpreter
+         -> AirportsCSVInterpreter
+         -> AirportsTableInterpreter
+         -> AirportsLoader;
+// Get CSV file
+	block AirportsExtractor oftype HttpExtractor {
+		url: 'https://opendata.rhein-kreis-neuss.de/api/explore/v2.1/catalog/datasets/rhein-kreis-neuss-flughafen-weltweit/exports/csv?lang=en&timezone=Europe%2FBerlin&use_labels=true&delimiter=%3B';
+	}
+	// Text Interpreter
+	block AirportsTextFileInterpreter oftype TextFileInterpreter { }
+
+	// CSV Interpreter
+	block AirportsCSVInterpreter oftype CSVInterpreter {
+		delimiter: ';';
+	}
+
+	// Table Interpreter
+	block AirportsTableInterpreter oftype TableInterpreter {
+		header: true;
+		columns: [
+			"Lfd. Nummer" oftype integer,
+            "Name des Flughafens" oftype text,
+            "Ort" oftype text,
+            "Land" oftype text,
+            "IATA" oftype text,
+            "ICAO" oftype text,
+            "Latitude" oftype decimal,
+            "Longitude" oftype decimal,
+            "Altitude" oftype integer,
+            "Zeitzone" oftype decimal,
+            "DST" oftype text,
+            "Zeitzonen-Datenbank" oftype text,
+            "geo_punkt" oftype text
+		];
+	}
+
+	// Generate the SQLITE database
+	block AirportsDatabaseLoader oftype SQLiteLoader {
+		table: 'airports';
+		file: './airports.sqlite';
+	}
+
+}
