@@ -19,9 +19,8 @@ pipeline TreePlantingPipeline {
         delimiter: ',';
     }
 
-    block TreeDataCleaner oftype RowDeleter {
-        delete: [row E];  // Remove unnecessary metadata rows if present
-    }
+    block TreeDataCleaner oftype ColumnDeleter {
+        delete: [Column E];  // Remove unnecessary metadata Column
 
     valuetype Geopoint oftype text {
         constraints: [
