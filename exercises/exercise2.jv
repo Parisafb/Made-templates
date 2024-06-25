@@ -20,7 +20,7 @@ pipeline TreePlantingPipeline {
     }
 
     block TreeDataCleaner oftype RowDeleter {
-        delete: [row 1, row 2];  // Remove unnecessary metadata rows if present
+        delete: [row E];  // Remove unnecessary metadata rows if present
     }
 
     valuetype Geopoint oftype text {
@@ -28,13 +28,16 @@ pipeline TreePlantingPipeline {
             GeoCoordinatePattern
         ];
     }
-
+    valuetype valid_stadtteil oftype text {
+constraints: [ValidStadtteil,
+];
+}
     constraint GeoCoordinatePattern oftype RegexConstraint {
-        regex: /^[0-9]{1,3}\.[0-9]+, [0-9]{1,3}\.[0-9]+$/;
+        regex: /^(\d{1,3}\.\d+), (\d{1,3}\.\d+)$/;
     }
 
     constraint ValidStadtteil oftype RegexConstraint {
-        regex: /^Furth-.*/;
+         regex: /^Furth-/;
     }
 
     block TreeDataValidator oftype TableInterpreter {
