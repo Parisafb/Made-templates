@@ -22,34 +22,33 @@ class DataPipeline:
         self.temp_url = temp_url
         self.health_url = health_url
         self.db_name = db_name
-        self.conn = sqlite3.connect(f'data/{self.db_name}.sqlite')
+        self.conn = sqlite3.connect(f'/project/data/{self.db_name}.sqlite')  # Ensure the path is correct
 
     def load_data(self):
-        # دانلود و بارگذاری داده‌های دما
+        #load temp data
         temp_response = requests.get(self.temp_url)
         temp_response.raise_for_status()  # Raise an error for bad status codes
         self.temperature_data = pd.read_csv(BytesIO(temp_response.content))
-        
-        # دانلود و بارگذاری داده‌های سلامت
+         #load health data
         health_response = requests.get(self.health_url)
         health_response.raise_for_status()  # Raise an error for bad status codes
         self.health_data = pd.read_csv(BytesIO(health_response.content))
 
     def preprocess_data(self):
-        # preProcess temp
-        self.temperature_data['Year'] = pd.to_datetime(self.temperature_data['dt']).dt.year
+       #preprocess tempdata
+        self.temperature_data['Year'] = self.temperature_data['Years']
         self.temperature_data_clean = self.temperature_data[(self.temperature_data['Year'] >= 2000) & (self.temperature_data['Year'] <= 2019)]
         
-        # delete unnece
-        self.temperature_data_clean = self.temperature_data_clean[['Year', 'Country', 'AverageTemperature', 'AverageTemperatureUncertainty']]
+        # delete unnecessery 
+        self.temperature_data_clean = self.temperature_data_clean[['Year', 'Country', 'Temperature', 'Anomaly']]
         
-        # avg Temp , avg Anomaly
+        # avg temp and anomaly
         self.temperature_data_clean = self.temperature_data_clean.groupby(['Year', 'Country']).agg(
-            AverageAnnualTemperature=('AverageTemperature', 'mean'),
-            AverageAnnualAnomaly=('AverageTemperatureUncertainty', 'mean')
+            AverageAnnualTemperature=('Temperature', 'mean'),
+            AverageAnnualAnomaly=('Anomaly', 'mean')
         ).reset_index()
 
-        #Preprocess Health
+        #preprocess helathdata
         self.health_data_clean = self.health_data[['Location', 'Period', 'Value']]
         self.health_data_clean.columns = ['Country', 'Year', 'MortalityRate']
         self.health_data_clean.dropna(inplace=True)
@@ -65,8 +64,7 @@ class DataPipeline:
         self.conn.close()
 
 if __name__ == "__main__":
-    temp_url = 'https://www.kaggle.com/datasets/josepferrersnchez/bearkley-earth-surface-temperature-data'
+    temp_url = 'https://www.kaggle.com/datasets/josepferrersnchez/bearkley-earth-surface-temperature-data/download'  
     health_url = 'https://www.who.int/data/gho/data/indicators/indicator-details/GHO/probability-(-)-of-dying-between-age-30-and-exact-age-70-from-any-of-cardiovascular-disease-cancer-diabetes-or-chronic-respiratory-disease'
     pipeline = DataPipeline(temp_url, health_url, 'climate_health')
     pipeline.run()
-
