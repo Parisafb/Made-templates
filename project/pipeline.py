@@ -12,74 +12,58 @@
 # Update the issues and project plan if necessary
 
 
-import pandas as pd
 import os
 from kaggle.api.kaggle_api_extended import KaggleApi
-from zipfile import ZipFile
+import pandas as pd
+import numpy as np
 from sqlalchemy import create_engine
 
-class KaggleETLPipeline:
-    def __init__(self, kaggle_dataset1, kaggle_dataset2, db_name):
-        self.kaggle_dataset1 = kaggle_dataset1
-        self.kaggle_dataset2 = kaggle_dataset2
-        self.db_name = db_name
-        self.engine = create_engine(f'sqlite:///{db_name}.sqlite', echo=False)
-        self.api = KaggleApi()
-        self.api.authenticate()
-        self.files_to_delete = []
+class ExtractData:
+    def __init__(self):
+        self.kaggle_api = KaggleApi()
+        self.script_dir = os.path.dirname(os.path.abspath(__file__))
+        self.data_dir = os.path.join(self.script_dir, 'data')
+        self.download_dir = os.path.abspath(self.data_dir)
+        os.makedirs(self.download_dir, exist_ok=True)
+        os.environ['KAGGLE_CONFIG_DIR'] = os.path.join(self.script_dir, ".kaggle")
+        self.kaggle_api.authenticate()
 
-    def extract_data(self):
-        # Download and extract the first Kaggle dataset
-        self.api.dataset_download_files(self.kaggle_dataset1, path='.', unzip=True)
-        dataset1_files = [file for file in os.listdir('.') if file.endswith('.csv')]
-        df1 = pd.read_csv(dataset1_files[0])
+    def download_dataset(self, dataset_name):
+        self.kaggle_api.dataset_download_files(dataset_name, path=self.download_dir, unzip=True)
 
-        # Download and extract the second Kaggle dataset
-        self.api.dataset_download_files(self.kaggle_dataset2, path='.', unzip=True)
-        dataset2_files = [file for file in os.listdir('.') if file.endswith('.csv')]
-        df2 = pd.read_csv(dataset2_files[0])
+    def load_and_clean_data(self, dataset_name):
+        dataset_path = os.path.join(self.download_dir, dataset_name)
+        dataset = pd.read_csv(dataset_path)
+        numeric_mean = dataset.select_dtypes(include=[np.number]).mean()
+        df_numeric_imputed = dataset.select_dtypes(include=[np.number]).fillna(numeric_mean)
+        dataset_imputed = pd.concat([dataset.select_dtypes(exclude=[np.number]), df_numeric_imputed], axis=1)
+        return dataset_imputed
 
-        # Mark files for deletion later
-        self.files_to_delete.extend(dataset1_files + dataset2_files)
+    def save_data(self, database_name, dataset, table_name):
+        engine = create_engine(f'sqlite:///{self.download_dir}/{database_name}.sqlite')
+        dataset.to_sql(table_name, con=engine, if_exists='replace', index=False)
 
-        print("Data extraction complete.")
-        return df1, df2
-
-    def transform_data(self, df1, df2):
-        # Example transformations:
-        # Remove unnecessary columns
-        df1 = df1.drop(columns=['Unnamed: 0'], errors='ignore')
-        df2 = df2.drop(columns=['Unnamed: 0'], errors='ignore')
-
-        # Fill missing values with backward fill
-        df1 = df1.bfill()
-        df2 = df2.bfill()
-
-        print("Data transformation complete.")
-        return df1, df2
-
-    def load_data(self, df1, df2):
-        df1.to_sql("dataset1", self.engine, if_exists='replace', index=False)
-        df2.to_sql("dataset2", self.engine, if_exists='replace', index=False)
-        print(f"Data loaded into database '{self.db_name}.sqlite'.")
-
-        # Clean up extracted files
-        for file in self.files_to_delete:
-            os.remove(file)
-
-        self.engine.dispose()
-        print("Temporary files deleted and database connection closed.")
-
-    def run_pipeline(self):
-        df1, df2 = self.extract_data()
-        transformed_df1, transformed_df2 = self.transform_data(df1, df2)
-        self.load_data(transformed_df1, transformed_df2)
-        print("ETL pipeline completed successfully.")
+    def remove_unnecessary_files(self):
+        for filename in os.listdir(self.download_dir):
+            if not filename.endswith(".sqlite"):
+                file_path = os.path.join(self.download_dir, filename)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
 
 if __name__ == '__main__':
-    pipeline = KaggleETLPipeline(
-        kaggle_dataset1='thedevastator/impact-of-co2-on-quality-of-life-around-the-world',
-        kaggle_dataset2='ulrikthygepedersen/co2-emissions-by-country',
-        db_name='kaggle_data'
-    )
-    pipeline.run_pipeline()
+    extract = ExtractData()
+
+    # دانلود و پردازش داده‌های CO2
+    extract.download_dataset('https://www.kaggle.com/datasets/ulrikthygepedersen/co2-emissions-by-country/data')
+    co2_dataset = extract.load_and_clean_data('co2_emissions_kt_by_country.csv')
+    extract.save_data('ClimateChangeDB', co2_dataset, 'co2_emissions')
+
+    # دانلود و پردازش داده‌های کیفیت زندگی
+    extract.download_dataset('https://www.kaggle.com/datasets/thedevastator/impact-of-co2-on-quality-of-life-around-the-world')
+    qol_dataset = extract.load_and_clean_data('QoL_cleaned.csv')
+    extract.save_data('ClimateChangeDB', qol_dataset, 'quality_of_life')
+
+    # حذف فایل‌های غیرضروری
+    extract.remove_unnecessary_files()
+
+    print("Data pipeline executed successfully.")
