@@ -1,0 +1,69 @@
+GTFSDataPipeline {
+    // Pipeline flow for GTFSDataPipeline
+    HttpExtractor as GTFSDataDownloader
+        -> ArchiveInterpreter as ZIPInterpreter
+        -> FilePicker as SelectStopsFile
+        -> TextFileInterpreter as ReadStopsFile
+        -> CSVInterpreter as ParseCSVData
+        -> TableInterpreter as TransformStopsData
+        -> SQLiteLoader as LoadStopsToSQLite;
+
+    // Block definitions
+
+    HttpExtractor GTFSDataDownloader {
+        url: "https://gtfs.rhoenenergie-bus.de/GTFS.zip";
+    }
+
+    ArchiveInterpreter ZIPInterpreter {
+        archiveType: "zip";
+    }
+
+    FilePicker SelectStopsFile {
+        path: "/stops.txt";
+    }
+
+    TextFileInterpreter ReadStopsFile {}
+
+    CSVInterpreter ParseCSVData {
+        enclosing: '"';
+        enclosingEscape: '"';
+    }
+
+    valuetype decimal ValidCoordinateType {
+        constraints: [LatitudeLongitudeRange];
+    }
+
+    constraint RangeConstraint LatitudeLongitudeRange {
+        lowerBound: -90;
+        lowerBoundInclusive: true;
+        upperBound: 90;
+        upperBoundInclusive: true;
+    }
+
+    valuetype integer ValidZoneType {
+        constraints: [Zone1645Constraint];
+    }
+
+    constraint RangeConstraint Zone1645Constraint {
+        lowerBound: 1645;
+        lowerBoundInclusive: true;
+        upperBound: 1645;
+        upperBoundInclusive: true;
+    }
+
+    TableInterpreter TransformStopsData {
+        header: true;
+        columns: [
+            "stop_id" oftype integer,
+            "stop_name" oftype text,
+            "stop_lat" oftype ValidCoordinateType,
+            "stop_lon" oftype ValidCoordinateType,
+            "zone_id" oftype ValidZoneType,
+        ];
+    }
+
+    SQLiteLoader LoadStopsToSQLite {
+        table: "stops";
+        file: "./gtfs.sqlite";
+    }
+}
