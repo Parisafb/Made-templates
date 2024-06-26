@@ -1,0 +1,93 @@
+exercise4pipeline {
+    // Define the pipeline sequence for exercise4pipeline
+    HttpExtractor as ExtractWeather
+        -> ArchiveInterpreter as UnzipWeatherData
+        -> FilePicker as SelectWeatherCSV
+        -> TextFileInterpreter as InterpretWeatherText
+        -> CSVInterpreter as ParseWeatherCSV
+        -> CellRangeSelector as SelectColumns
+        -> ColumnDeleter as RemoveColumns
+        -> TableInterpreter as ConvertToTable
+        -> TableTransformer as ConvertTemperature
+        -> TableTransformer as ConvertBatteryTemperature
+        -> SQLiteLoader as SaveToDatabase;
+
+    // Block definitions
+
+    HttpExtractor ExtractWeather {
+        url: "https://www.mowesta.com/data/measure/mowesta-dataset-20221107.zip";
+    }
+
+    ArchiveInterpreter UnzipWeatherData {
+        archiveType: "zip";
+    }
+
+    FilePicker SelectWeatherCSV {
+        path: "/data.csv";
+    }
+
+    TextFileInterpreter InterpretWeatherText {}
+
+    CSVInterpreter ParseWeatherCSV {
+        delimiter: ';';
+    }
+
+    CellRangeSelector SelectColumns {
+        select: range A1:K*;
+    }
+
+    ColumnDeleter RemoveColumns {
+        delete: [
+            column F,
+            column G,
+            column H,
+            column I
+        ];
+    }
+
+    valuetype PositiveInteger {
+        constraints: [PositiveRange];
+    }
+
+    constraint RangeConstraint PositiveRange {
+        lowerBound: 0;
+        lowerBoundInclusive: false;
+    }
+
+    TableInterpreter ConvertToTable {
+        header: false;
+        columns: [
+            "id" oftype PositiveInteger,
+            "producer" oftype text,
+            "model" oftype text,
+            "month" oftype integer,
+            "temperature" oftype decimal,
+            "battery_temperature" oftype decimal
+        ];
+    }
+
+    TableTransformer ConvertTemperature {
+        inputColumns: ['temperature'];
+        outputColumn: 'temperature';
+        use: ConvertTemp;  // Use the transformation
+    }
+
+    TableTransformer ConvertBatteryTemperature {
+        inputColumns: ['battery_temperature'];
+        outputColumn: 'battery_temperature';
+        use: ConvertTemp;  // Use the transformation
+    }
+
+    transform ConvertTemp {
+        from tempCelsius oftype decimal;
+        to tempFahrenheit oftype decimal;
+
+        tempFahrenheit: (tempCelsius * 9/5) + 32;
+    }
+
+    SQLiteLoader SaveToDatabase {
+        table: "temperatures";
+        file: "./temperatures.sqlite";
+        dropTable: false;
+    }
+}
