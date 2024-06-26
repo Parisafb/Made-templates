@@ -13,57 +13,86 @@
 
 
 import os
-from kaggle.api.kaggle_api_extended import KaggleApi
 import pandas as pd
-import numpy as np
+import requests
+from zipfile import ZipFile
 from sqlalchemy import create_engine
 
-class ExtractData:
-    def __init__(self):
-        self.kaggle_api = KaggleApi()
-        self.script_dir = os.path.dirname(os.path.abspath(__file__))
-        self.data_dir = os.path.join(self.script_dir, 'data')
-        self.download_dir = os.path.abspath(self.data_dir)
-        os.makedirs(self.download_dir, exist_ok=True)
-        os.environ['KAGGLE_CONFIG_DIR'] = os.path.join(self.script_dir, ".kaggle")
-        self.kaggle_api.authenticate()
+class Pipeline:
+    def __init__(self, url1, url2, save_file_name):
+        self.url1 = url1
+        self.url2 = url2
+        self.data1 = None
+        self.data2 = None
+        path = os.path.join('data', save_file_name + '.sqlite')
+        self.engine = create_engine(f'sqlite:///{path}', echo=False)
+        self.files_to_delete = []
 
-    def download_dataset(self, dataset_name):
-        self.kaggle_api.dataset_download_files(dataset_name, path=self.download_dir, unzip=True)
+    def get_data(self):
+        self.data1, items_to_delete1 = self.get_data_helper(self.url1, 0, "co2_emissions")
+        self.data2, items_to_delete2 = self.get_data_helper(self.url2, 0, "quality_of_life")
+        self.files_to_delete.extend(items_to_delete1)
+        self.files_to_delete.extend(items_to_delete2)
 
-    def load_and_clean_data(self, dataset_name):
-        dataset_path = os.path.join(self.download_dir, dataset_name)
-        dataset = pd.read_csv(dataset_path)
-        numeric_mean = dataset.select_dtypes(include=[np.number]).mean()
-        df_numeric_imputed = dataset.select_dtypes(include=[np.number]).fillna(numeric_mean)
-        dataset_imputed = pd.concat([dataset.select_dtypes(exclude=[np.number]), df_numeric_imputed], axis=1)
-        return dataset_imputed
+    def get_data_helper(self, url, idx, filename):
+        """Helper function to get the data, as we may use it get data from several urls"""
+        print("Downloading", url)
+        response = requests.get(url)
 
-    def save_data(self, database_name, dataset, table_name):
-        engine = create_engine(f'sqlite:///{self.download_dir}/{database_name}.sqlite')
-        dataset.to_sql(table_name, con=engine, if_exists='replace', index=False)
+        if response.status_code == 200:
+            filename = filename + ".zip"
 
-    def remove_unnecessary_files(self):
-        for filename in os.listdir(self.download_dir):
-            if not filename.endswith(".sqlite"):
-                file_path = os.path.join(self.download_dir, filename)
-                if os.path.isfile(file_path):
-                    os.remove(file_path)
+            # Write the downloaded content to the file
+            with open(filename, 'wb') as f:
+                f.write(response.content)
+
+            # Extract the CSV file from the zip
+            with ZipFile(filename, 'r') as zip_ref:
+                csv_filename = zip_ref.namelist()[idx]  # Get the csv file name
+                zip_ref.extract(csv_filename)  # Extract the file
+
+            # Load the extracted CSV file into a pandas DataFrame
+            df = pd.read_csv(csv_filename, encoding='unicode_escape')
+
+            return df, [filename, csv_filename]
+        else:
+            print(f"Download failed for {url}. Status code: {response.status_code}")
+
+    def transform_data(self):
+        #CO2
+        if self.data1 is not None:
+            self.data1.dropna(inplace=True)  #delete missing
+            self.data1 = self.data1.rename(columns={'Year': 'year', 'CO2_emissions': 'co2_emissions'})
+
+        # Qol
+        if self.data2 is not None:
+            self.data2.dropna(inplace=True)  # delete missing
+            columns_to_keep = ['Country', 'Stability(15%)', 'Rights(20%)', 'Health(15%)', 
+                                'Safety(10%)', 'Climate(15%)', 'Costs(15%)', 'Popularity(10%)', 
+                                'TotalQuality of life(100%)']
+            self.data2 = self.data2[columns_to_keep]
+
+    def save_data(self):
+        if self.data1 is not None:
+            self.data1.to_sql("CO2_Emissions", self.engine, if_exists='replace', index=False)
+        if self.data2 is not None:
+            self.data2.to_sql("Quality_of_Life", self.engine, if_exists='replace', index=False)
+
+        for pa in self.files_to_delete:  # Removing downloaded and extracted data
+            os.remove(pa)
+
+        self.engine.dispose()
+
+    def run_pipeline(self):
+        self.get_data()
+        print("Got the Datasets!")
+        self.transform_data()
+        print("Datasets Transformed!")
+        self.save_data()
+        print("Datasets Saved!")
 
 if __name__ == '__main__':
-    extract = ExtractData()
-
-    # دانلود و پردازش داده‌های CO2
-    extract.download_dataset('https://www.kaggle.com/datasets/ulrikthygepedersen/co2-emissions-by-country/data')
-    co2_dataset = extract.load_and_clean_data('co2_emissions_kt_by_country.csv')
-    extract.save_data('ClimateChangeDB', co2_dataset, 'co2_emissions')
-
-    # دانلود و پردازش داده‌های کیفیت زندگی
-    extract.download_dataset('https://www.kaggle.com/datasets/thedevastator/impact-of-co2-on-quality-of-life-around-the-world')
-    qol_dataset = extract.load_and_clean_data('QoL_cleaned.csv')
-    extract.save_data('ClimateChangeDB', qol_dataset, 'quality_of_life')
-
-    # حذف فایل‌های غیرضروری
-    extract.remove_unnecessary_files()
-
-    print("Data pipeline executed successfully.")
+    pipe = Pipeline("https://www.kaggle.com/datasets/ulrikthygepedersen/co2-emissions-by-country/download",
+                    "https://www.kaggle.com/datasets/thedevastator/impact-of-co2-on-quality-of-life-around-the-world/download",
+                    "ClimateChangeDB")
+    pipe.run_pipeline()
