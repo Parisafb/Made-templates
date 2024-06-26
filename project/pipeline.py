@@ -12,87 +12,61 @@
 # Update the issues and project plan if necessary
 
 
-import os
 import pandas as pd
+import sqlite3
 import requests
-from zipfile import ZipFile
-from sqlalchemy import create_engine
+from io import BytesIO
 
-class Pipeline:
-    def __init__(self, url1, url2, save_file_name):
-        self.url1 = url1
-        self.url2 = url2
-        self.data1 = None
-        self.data2 = None
-        path = os.path.join('data', save_file_name + '.sqlite')
-        self.engine = create_engine(f'sqlite:///{path}', echo=False)
-        self.files_to_delete = []
+class DataPipeline:
+    def __init__(self, temp_url, health_url, db_name):
+        self.temp_url = temp_url
+        self.health_url = health_url
+        self.db_name = db_name
+        self.conn = sqlite3.connect(f'data/{self.db_name}.sqlite')
 
-    def get_data(self):
-        self.data1, items_to_delete1 = self.get_data_helper(self.url1, 0, "co2_emissions")
-        self.data2, items_to_delete2 = self.get_data_helper(self.url2, 0, "quality_of_life")
-        self.files_to_delete.extend(items_to_delete1)
-        self.files_to_delete.extend(items_to_delete2)
+    def load_data(self):
+        # دانلود و بارگذاری داده‌های دما
+        temp_response = requests.get(self.temp_url)
+        temp_response.raise_for_status()  # Raise an error for bad status codes
+        self.temperature_data = pd.read_csv(BytesIO(temp_response.content))
+        
+        # دانلود و بارگذاری داده‌های سلامت
+        health_response = requests.get(self.health_url)
+        health_response.raise_for_status()  # Raise an error for bad status codes
+        self.health_data = pd.read_csv(BytesIO(health_response.content))
 
-    def get_data_helper(self, url, idx, filename):
-        """Helper function to get the data, as we may use it get data from several urls"""
-        print("Downloading", url)
-        response = requests.get(url)
+    def preprocess_data(self):
+        # preProcess temp
+        self.temperature_data['Year'] = pd.to_datetime(self.temperature_data['dt']).dt.year
+        self.temperature_data_clean = self.temperature_data[(self.temperature_data['Year'] >= 2000) & (self.temperature_data['Year'] <= 2019)]
+        
+        # delete unnece
+        self.temperature_data_clean = self.temperature_data_clean[['Year', 'Country', 'AverageTemperature', 'AverageTemperatureUncertainty']]
+        
+        # avg Temp , avg Anomaly
+        self.temperature_data_clean = self.temperature_data_clean.groupby(['Year', 'Country']).agg(
+            AverageAnnualTemperature=('AverageTemperature', 'mean'),
+            AverageAnnualAnomaly=('AverageTemperatureUncertainty', 'mean')
+        ).reset_index()
 
-        if response.status_code == 200:
-            filename = filename + ".zip"
+        #Preprocess Health
+        self.health_data_clean = self.health_data[['Location', 'Period', 'Value']]
+        self.health_data_clean.columns = ['Country', 'Year', 'MortalityRate']
+        self.health_data_clean.dropna(inplace=True)
 
-            # Write the downloaded content to the file
-            with open(filename, 'wb') as f:
-                f.write(response.content)
+    def save_to_db(self):
+        self.temperature_data_clean.to_sql('TemperatureData', self.conn, if_exists='replace', index=False)
+        self.health_data_clean.to_sql('HealthData', self.conn, if_exists='replace', index=False)
 
-            # Extract the CSV file from the zip
-            with ZipFile(filename, 'r') as zip_ref:
-                csv_filename = zip_ref.namelist()[idx]  # Get the csv file name
-                zip_ref.extract(csv_filename)  # Extract the file
+    def run(self):
+        self.load_data()
+        self.preprocess_data()
+        self.save_to_db()
+        self.conn.close()
 
-            # Load the extracted CSV file into a pandas DataFrame
-            df = pd.read_csv(csv_filename, encoding='unicode_escape')
+if __name__ == "__main__":
+    temp_url = 'https://www.kaggle.com/datasets/josepferrersnchez/bearkley-earth-surface-temperature-data'
+    health_url = 'https://www.who.int/data/gho/data/indicators/indicator-details/GHO/probability-(-)-of-dying-between-age-30-and-exact-age-70-from-any-of-cardiovascular-disease-cancer-diabetes-or-chronic-respiratory-disease'
+    pipeline = DataPipeline(temp_url, health_url, 'climate_health')
+    pipeline.run()
 
-            return df, [filename, csv_filename]
-        else:
-            print(f"Download failed for {url}. Status code: {response.status_code}")
-
-    def transform_data(self):
-        #CO2
-        if self.data1 is not None:
-            self.data1.dropna(inplace=True)  #delete missing
-            self.data1 = self.data1.rename(columns={'Year': 'year', 'CO2_emissions': 'co2_emissions'})
-
-        # Qol
-        if self.data2 is not None:
-            self.data2.dropna(inplace=True)  # delete missing
-            columns_to_keep = ['Country', 'Stability(15%)', 'Rights(20%)', 'Health(15%)', 
-                                'Safety(10%)', 'Climate(15%)', 'Costs(15%)', 'Popularity(10%)', 
-                                'TotalQuality of life(100%)']
-            self.data2 = self.data2[columns_to_keep]
-
-    def save_data(self):
-        if self.data1 is not None:
-            self.data1.to_sql("CO2_Emissions", self.engine, if_exists='replace', index=False)
-        if self.data2 is not None:
-            self.data2.to_sql("Quality_of_Life", self.engine, if_exists='replace', index=False)
-
-        for pa in self.files_to_delete:  # Removing downloaded and extracted data
-            os.remove(pa)
-
-        self.engine.dispose()
-
-    def run_pipeline(self):
-        self.get_data()
-        print("Got the Datasets!")
-        self.transform_data()
-        print("Datasets Transformed!")
-        self.save_data()
-        print("Datasets Saved!")
-
-if __name__ == '__main__':
-    pipe = Pipeline("https://www.kaggle.com/datasets/ulrikthygepedersen/co2-emissions-by-country/download",
-                    "https://www.kaggle.com/datasets/thedevastator/impact-of-co2-on-quality-of-life-around-the-world/download",
-                    "ClimateChangeDB")
-    pipe.run_pipeline()
