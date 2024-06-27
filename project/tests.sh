@@ -1,2 +1,3 @@
 #!/bin/bash
-python ./project/tests.py
+
+python -m unittest project/test_pipeline.py
