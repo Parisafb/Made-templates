@@ -49,6 +49,7 @@ class DataPipeline:
         ).reset_index()
 
         #preprocess helathdata
+        self.health_data_clean = self.health_data[(self.health_data['Period'] >= 2000) & (self.health_data['Period'] <= 2019)]
         self.health_data_clean = self.health_data[['Location', 'Period', 'Value']]
         self.health_data_clean.columns = ['Country', 'Year', 'MortalityRate']
         self.health_data_clean.dropna(inplace=True)
