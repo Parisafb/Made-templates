@@ -8,18 +8,20 @@ class TestDataPipeline(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Set up the test environment before running any tests."""
-        cls.db_path = '/e/data/climate_health.sqlite'
+        cls.db_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'climate_health.sqlite')
         
         # Ensure the database file is removed before running tests
         if os.path.exists(cls.db_path):
             os.remove(cls.db_path)
         
         # Run the main function to execute the data pipeline once for all tests
-        temp_file = 'E:/src/temperature_data.csv'
-        health_file = 'E:/src/health_data.csv'
-        pipeline = DataPipeline(temp_file, health_file, 'climate_health')
+        pipeline = DataPipeline(
+            temp_url='https://www.kaggle.com/datasets/josepferrersnchez/bearkley-earth-surface-temperature-data/download', 
+            health_url='https://www.who.int/data/gho/data/indicators/indicator-details/GHO/probability-(-)-of-dying-between-age-30-and-exact-age-70-from-any-of-cardiovascular-disease-cancer-diabetes-or-chronic-respiratory-disease', 
+            db_name='climate_health'
+        )
         pipeline.run()
-        
+
         # Set up the database connection and cursor for reuse in tests
         cls.conn = sqlite3.connect(cls.db_path)
         cls.cursor = cls.conn.cursor()
@@ -46,7 +48,7 @@ class TestDataPipeline(unittest.TestCase):
             'AverageAnnualTemperature': 'REAL',
             'AverageAnnualAnomaly': 'REAL'
         }
-        self.assertDictEqual(columns, expected_columns, "TemperatureData table schema is incorrect.")
+        self.assertDictEqual(columns, expected_columns, "Temperature data table schema is incorrect.")
 
     def test_health_table_schema(self):
         """Test the schema of the HealthData table."""
@@ -57,17 +59,17 @@ class TestDataPipeline(unittest.TestCase):
             'Year': 'INTEGER',
             'MortalityRate': 'REAL'
         }
-        self.assertDictEqual(columns, expected_columns, "HealthData table schema is incorrect.")
+        self.assertDictEqual(columns, expected_columns, "Health data table schema is incorrect.")
 
     def test_temperature_table_data(self):
         """Test that the TemperatureData table contains data."""
         self.cursor.execute("SELECT COUNT(*) FROM TemperatureData;")
-        self.assertGreater(self.cursor.fetchone()[0], 0, "TemperatureData table does not contain any data.")
+        self.assertGreater(self.cursor.fetchone()[0], 0, "Temperature data table does not contain any data.")
 
     def test_health_table_data(self):
         """Test that the HealthData table contains data."""
         self.cursor.execute("SELECT COUNT(*) FROM HealthData;")
-        self.assertGreater(self.cursor.fetchone()[0], 0, "HealthData table does not contain any data.")
+        self.assertGreater(self.cursor.fetchone()[0], 0, "Health data table does not contain any data.")
 
     @classmethod
     def tearDownClass(cls):
