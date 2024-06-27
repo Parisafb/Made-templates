@@ -41,9 +41,9 @@ This data source contains health data from the World Health Organization (WHO), 
 5. Continuous Integration Pipeline for the Project [#5][i5]
 6. Final Report and Presentation Submission [#6][i6]
 
-[i1]: https://github.com/YourUsername/YourRepo/issues/1
-[i2]: https://github.com/YourUsername/YourRepo/issues/2
-[i3]: https://github.com/YourUsername/YourRepo/issues/3
-[i4]: https://github.com/YourUsername/YourRepo/issues/4
-[i5]: https://github.com/YourUsername/YourRepo/issues/5
-[i6]: https://github.com/YourUsername/YourRepo/issues/6
+[i1]: https://github.com/Parisafb/made-templates/issues/1
+[i2]: https://github.com/Parisafb/made-templates/issues/2
+[i3]: https://github.com/Parisafb/made-templates/issues/3
+[i4]: https://github.com/Parisafb/made-templates/issues/4
+[i5]: https://github.com/Parisafb/made-templates/issues/5
+[i6]: https://github.com/Parisafb/made-templates/issues/6
